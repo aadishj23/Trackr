@@ -219,8 +219,8 @@ export default function RegisterPage() {
           )}
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button type="submit" className="w-full" disabled={!canSubmit}>
-          {loading ? "Creating..." : "Create account"}
+        <Button type="submit" className="w-full" size="lg" disabled={!canSubmit} loading={loading}>
+          {loading ? "Creating account…" : "Create account"}
         </Button>
       </form>
       <p className="text-center text-sm text-muted-foreground">

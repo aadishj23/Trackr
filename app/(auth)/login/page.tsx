@@ -7,10 +7,11 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageSpinner } from "@/components/ui/spinner";
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="text-center text-sm text-muted-foreground">Loading...</div>}>
+    <Suspense fallback={<PageSpinner />}>
       <LoginForm />
     </Suspense>
   );
@@ -74,8 +75,8 @@ function LoginForm() {
           />
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? "Signing in..." : "Sign in"}
+        <Button type="submit" className="w-full" size="lg" loading={loading}>
+          {loading ? "Signing in…" : "Sign in"}
         </Button>
       </form>
       <p className="text-center text-sm text-muted-foreground">

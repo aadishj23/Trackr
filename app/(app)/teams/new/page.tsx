@@ -106,8 +106,14 @@ export default function NewTeamPage() {
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" size="lg" disabled={loading || name.trim().length < 2}>
-            {loading ? "Creating…" : "Create team"}
+          <Button
+            type="submit"
+            className="w-full"
+            size="lg"
+            loading={loading}
+            disabled={name.trim().length < 2}
+          >
+            {loading ? "Creating team…" : "Create team"}
           </Button>
         </form>
       </Card>

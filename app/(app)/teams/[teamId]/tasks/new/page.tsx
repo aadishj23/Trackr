@@ -7,6 +7,7 @@ import { ArrowLeft, Plus, X, Users, User as UserIcon, Eye, Shield } from "lucide
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageSpinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 type Member = { id: string; username: string; email: string };
@@ -112,7 +113,7 @@ export default function NewTaskPage() {
   }
 
   if (!team) {
-    return <div className="pt-10 text-center text-sm text-muted-foreground">Loading…</div>;
+    return <PageSpinner />;
   }
   if (team.role !== "manager") {
     return (
@@ -311,14 +312,14 @@ export default function NewTaskPage() {
           type="submit"
           className="w-full"
           size="lg"
+          loading={loading}
           disabled={
-            loading ||
             assigneeIds.length === 0 ||
             title.trim().length === 0 ||
             assignableMembers.length === 0
           }
         >
-          {loading ? "Creating..." : "Create task"}
+          {loading ? "Creating task…" : "Create task"}
         </Button>
       </form>
     </div>

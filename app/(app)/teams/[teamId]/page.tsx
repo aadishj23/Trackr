@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Spinner, PageSpinner } from "@/components/ui/spinner";
 import { Avatar, AvatarStack } from "@/components/avatar";
 import { TaskSwipeCards } from "@/components/task-swipe-cards";
 import { cn } from "@/lib/utils";
@@ -454,7 +455,7 @@ function PendingRow({
           className="h-8 w-8 rounded-lg border hover:bg-accent text-muted-foreground grid place-items-center transition disabled:opacity-50"
           aria-label="Reject"
         >
-          <X className="h-4 w-4" />
+          {busy === "reject" ? <Spinner size="sm" /> : <X className="h-4 w-4" />}
         </button>
         <button
           disabled={!!busy}
@@ -462,7 +463,7 @@ function PendingRow({
           className="h-8 w-8 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 grid place-items-center transition disabled:opacity-50"
           aria-label="Approve"
         >
-          <Check className="h-4 w-4" />
+          {busy === "approve" ? <Spinner size="sm" /> : <Check className="h-4 w-4" />}
         </button>
       </div>
     </div>
@@ -492,6 +493,10 @@ function TaskCard({
   const [showSettings, setShowSettings] = useState(false);
   const [transferring, setTransferring] = useState(false);
   const [transferIds, setTransferIds] = useState<string[]>(task.assignees.map((a) => a.id));
+  const [selfBusy, setSelfBusy] = useState(false);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [decideBusy, setDecideBusy] = useState<string | null>(null);
+  const [tickingSubs, setTickingSubs] = useState<Set<string>>(new Set());
   const total = task.subtasks.length;
   const fullyDoneCount = task.subtasks.filter((s) => s.fullyDone).length;
   const myAssignedSubs = task.subtasks.filter((s) => s.iAmAssigned);
@@ -512,32 +517,55 @@ function TaskCard({
   const progressPct = isAssignee ? myProgressPct : teamProgressPct;
 
   async function toggleSub(subId: string, next: boolean, targetUserId?: string) {
+    const key = `${subId}:${targetUserId ?? "self"}`;
+    if (tickingSubs.has(key)) return;
+    setTickingSubs((prev) => new Set(prev).add(key));
     const payload: { id: string; done: boolean; userId?: string } = { id: subId, done: next };
     if (targetUserId) payload.userId = targetUserId;
-    await fetch(`/api/teams/${teamId}/tasks/${task.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subtasks: [payload] }),
-    });
-    onChange();
+    try {
+      await fetch(`/api/teams/${teamId}/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subtasks: [payload] }),
+      });
+      await onChange();
+    } finally {
+      setTickingSubs((prev) => {
+        const n = new Set(prev);
+        n.delete(key);
+        return n;
+      });
+    }
   }
 
   async function markSelf(state: "done" | "pending") {
-    await fetch(`/api/teams/${teamId}/tasks/${task.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ markSelf: state }),
-    });
-    onChange();
+    if (selfBusy) return;
+    setSelfBusy(true);
+    try {
+      await fetch(`/api/teams/${teamId}/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markSelf: state }),
+      });
+      await onChange();
+    } finally {
+      setSelfBusy(false);
+    }
   }
 
   async function decide(action: "approve" | "reject", userId: string) {
-    await fetch(`/api/teams/${teamId}/tasks/${task.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [action]: { userId } }),
-    });
-    onChange();
+    if (decideBusy) return;
+    setDecideBusy(`${action}:${userId}`);
+    try {
+      await fetch(`/api/teams/${teamId}/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [action]: { userId } }),
+      });
+      await onChange();
+    } finally {
+      setDecideBusy(null);
+    }
   }
 
   async function setOverride(field: "visibleToTeam" | "requireApproval", value: boolean | null) {
@@ -550,14 +578,19 @@ function TaskCard({
   }
 
   async function saveTransfer() {
-    if (transferIds.length === 0) return;
-    await fetch(`/api/teams/${teamId}/tasks/${task.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assigneeIds: transferIds }),
-    });
-    setTransferring(false);
-    onChange();
+    if (transferIds.length === 0 || transferBusy) return;
+    setTransferBusy(true);
+    try {
+      await fetch(`/api/teams/${teamId}/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assigneeIds: transferIds }),
+      });
+      await onChange();
+      setTransferring(false);
+    } finally {
+      setTransferBusy(false);
+    }
   }
 
   async function deleteTask() {
@@ -656,6 +689,7 @@ function TaskCard({
                         sub={s}
                         currentUserId={currentUserId}
                         isManager={isManager}
+                        myTickBusy={tickingSubs.has(`${s.id}:self`)}
                         onToggle={(uid, next) =>
                           uid ? toggleSub(s.id, next, uid) : toggleSub(s.id, next)
                         }
@@ -678,6 +712,7 @@ function TaskCard({
                     task={task}
                     isManager={isManager}
                     currentUserId={currentUserId}
+                    decideBusy={decideBusy}
                     onApprove={(uid) => decide("approve", uid)}
                     onReject={(uid) => decide("reject", uid)}
                   />
@@ -688,6 +723,7 @@ function TaskCard({
                 <Button
                   size="sm"
                   className="w-full"
+                  loading={selfBusy}
                   variant={task.myState === "awaiting_approval" ? "outline" : "default"}
                   onClick={() =>
                     task.myState === "awaiting_approval" ? markSelf("pending") : markSelf("done")
@@ -705,7 +741,13 @@ function TaskCard({
                 </Button>
               )}
               {isAssignee && task.myState === "done" && (
-                <Button size="sm" variant="outline" className="w-full" onClick={() => markSelf("pending")}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  loading={selfBusy}
+                  onClick={() => markSelf("pending")}
+                >
                   {task.assignees.length > 1 ? "Reopen my share" : "Reopen"}
                 </Button>
               )}
@@ -766,14 +808,26 @@ function TaskCard({
                         })}
                       </div>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" className="flex-1 h-8" onClick={() => {
-                          setTransferring(false);
-                          setTransferIds(task.assignees.map((a) => a.id));
-                        }}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="flex-1 h-8"
+                          disabled={transferBusy}
+                          onClick={() => {
+                            setTransferring(false);
+                            setTransferIds(task.assignees.map((a) => a.id));
+                          }}
+                        >
                           Cancel
                         </Button>
-                        <Button size="sm" className="flex-1 h-8" onClick={saveTransfer} disabled={transferIds.length === 0}>
-                          Save
+                        <Button
+                          size="sm"
+                          className="flex-1 h-8"
+                          onClick={saveTransfer}
+                          disabled={transferIds.length === 0}
+                          loading={transferBusy}
+                        >
+                          {transferBusy ? "Saving…" : "Save"}
                         </Button>
                       </div>
                     </div>
@@ -806,11 +860,13 @@ function SubtaskRow({
   sub,
   currentUserId,
   isManager,
+  myTickBusy,
   onToggle,
 }: {
   sub: TaskItem["subtasks"][number];
   currentUserId: string | null;
   isManager: boolean;
+  myTickBusy: boolean;
   onToggle: (userId: string | null, done: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -818,11 +874,17 @@ function SubtaskRow({
   return (
     <li className="rounded-lg bg-muted/30 hover:bg-muted/50 transition px-3 py-2 space-y-1.5">
       <div className="flex items-start gap-3">
-        <Checkbox
-          checked={sub.myDone}
-          onCheckedChange={(v) => canTickMine && onToggle(null, v)}
-          disabled={!canTickMine}
-        />
+        {myTickBusy ? (
+          <span className="h-5 w-5 grid place-items-center">
+            <Spinner size="sm" className="text-primary" />
+          </span>
+        ) : (
+          <Checkbox
+            checked={sub.myDone}
+            onCheckedChange={(v) => canTickMine && !myTickBusy && onToggle(null, v)}
+            disabled={!canTickMine || myTickBusy}
+          />
+        )}
         <div className="flex-1 min-w-0">
           <p className={cn("text-sm", sub.myDone && "line-through text-muted-foreground")}>
             {sub.title}
@@ -900,12 +962,14 @@ function PerAssigneeStates({
   task,
   isManager,
   currentUserId,
+  decideBusy,
   onApprove,
   onReject,
 }: {
   task: TaskItem;
   isManager: boolean;
   currentUserId: string | null;
+  decideBusy: string | null;
   onApprove: (userId: string) => void;
   onReject: (userId: string) => void;
 }) {
@@ -919,6 +983,9 @@ function PerAssigneeStates({
             : a.state === "awaiting_approval"
               ? { label: "awaiting", cls: "bg-primary/10 text-primary" }
               : { label: "pending", cls: "bg-muted text-muted-foreground" };
+        const approving = decideBusy === `approve:${a.id}`;
+        const rejecting = decideBusy === `reject:${a.id}`;
+        const anyBusy = !!decideBusy;
         return (
           <div key={a.id} className="flex items-center gap-2 px-3 py-2">
             <Avatar name={a.username} size="xs" />
@@ -932,15 +999,17 @@ function PerAssigneeStates({
               <div className="flex gap-1">
                 <button
                   onClick={() => onReject(a.id)}
-                  className="text-[10px] h-6 px-2 rounded-md border hover:bg-accent"
+                  disabled={anyBusy}
+                  className="text-[10px] h-6 px-2 rounded-md border hover:bg-accent inline-flex items-center gap-1 disabled:opacity-50"
                 >
-                  reject
+                  {rejecting ? <Spinner size="xs" /> : "reject"}
                 </button>
                 <button
                   onClick={() => onApprove(a.id)}
-                  className="text-[10px] h-6 px-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+                  disabled={anyBusy}
+                  className="text-[10px] h-6 px-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1 disabled:opacity-50"
                 >
-                  approve
+                  {approving ? <Spinner size="xs" /> : "approve"}
                 </button>
               </div>
             )}

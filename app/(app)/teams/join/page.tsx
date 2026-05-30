@@ -90,8 +90,14 @@ export default function JoinTeamPage() {
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" size="lg" disabled={loading || code.length !== 6}>
-            {loading ? "Sending…" : "Request to join"}
+          <Button
+            type="submit"
+            className="w-full"
+            size="lg"
+            loading={loading}
+            disabled={code.length !== 6}
+          >
+            {loading ? "Sending request…" : "Request to join"}
           </Button>
         </form>
       </Card>
